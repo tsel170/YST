@@ -90,6 +90,7 @@ class MainViewModelTest {
     fun framesUpdateLiveLevelAndExistingDetector() {
         val capture = FakeAudioCapture()
         val viewModel = viewModel(capture)
+        viewModel.onThresholdChanged(-30f)
 
         viewModel.startMonitoring()
         capture.emit(SpeechFrame(timestampMs = 0L, levelDbFs = -10f, isSpeech = true))
@@ -116,6 +117,7 @@ class MainViewModelTest {
     fun volumeDipKeepsTheCycleAndTheLiveLevel() {
         val capture = FakeAudioCapture()
         val viewModel = viewModel(capture)
+        viewModel.onThresholdChanged(-30f)
         viewModel.startMonitoring()
         capture.emit(SpeechFrame(timestampMs = 0L, levelDbFs = -10f, isSpeech = true))
         capture.emit(SpeechFrame(timestampMs = 1_200L, levelDbFs = -10f, isSpeech = true))
@@ -140,6 +142,17 @@ class MainViewModelTest {
         assertNull(viewModel.uiState.value.levelDbFs)
         assertEquals(DetectionPhase.Idle, viewModel.uiState.value.phase)
         assertTrue(capture.stopped)
+    }
+
+    @Test
+    fun thresholdSliderExtendsAboveFullScale() {
+        val viewModel = viewModel()
+
+        viewModel.onThresholdChanged(30f)
+        assertEquals(30f, viewModel.uiState.value.settings.volumeThresholdDbFs)
+
+        viewModel.onThresholdChanged(80f)
+        assertEquals(MainViewModel.MAX_DB, viewModel.uiState.value.settings.volumeThresholdDbFs)
     }
 
     @Test
@@ -169,6 +182,7 @@ class MainViewModelTest {
         )
 
         viewModel.addSounds(listOf(clip))
+        viewModel.onThresholdChanged(-30f)
         viewModel.startMonitoring()
         capture.emit(SpeechFrame(timestampMs = 0L, levelDbFs = -10f, isSpeech = true))
         capture.emit(SpeechFrame(timestampMs = 1_200L, levelDbFs = -10f, isSpeech = true))

@@ -49,11 +49,13 @@ class MainViewModel(
     private val player: ResponsePlayer = IdleResponsePlayer,
     private val releasePlayer: () -> Unit = {},
     private val importFromDevice: (List<Uri>) -> List<SoundClip> = { emptyList() },
+    private val ownedByProcess: Boolean = false,
 ) : ViewModel() {
     private var settings = DetectionSettings()
     private var sounds: List<SoundClip> = soundLibrary.load()
     private var lastPlayedSound: String? = null
     private var monitoringActive = false
+    private var startRequested = false
     private var levelDbFs: Float? = null
     private var phase = DetectionPhase.Idle
     private var generation = 0
@@ -136,9 +138,10 @@ class MainViewModel(
     }
 
     fun startMonitoring() {
-        if (monitoringActive) {
+        if (monitoringActive || startRequested) {
             return
         }
+        startRequested = true
         val currentGeneration = ++generation
         val trackedRunner = TrackingTaskRunner(taskRunner)
         val controller = DetectionController(
@@ -202,12 +205,15 @@ class MainViewModel(
     }
 
     override fun onCleared() {
-        stopMonitoring()
-        releasePlayer()
+        if (!ownedByProcess) {
+            stopMonitoring()
+            releasePlayer()
+        }
         super.onCleared()
     }
 
     private fun stopMonitoring(notice: UserNotice?) {
+        startRequested = false
         generation += 1
         session?.runner?.cancelAll()
         session = null
@@ -291,7 +297,7 @@ class MainViewModel(
 
     companion object {
         const val MIN_DB = -60f
-        const val MAX_DB = 0f
+        const val MAX_DB = 30f
         const val MIN_SPEECH_MS = 200f
         const val MAX_SPEECH_MS = 5_000f
         const val MIN_SILENCE_MS = 200f

@@ -13,7 +13,7 @@
     <string name="level_unit">dBFS</string>
     <string name="level_unavailable_detail">No live microphone level. Capture is not running.</string>
     <string name="meter_scale_min">-60</string>
-    <string name="meter_scale_max">0</string>
+    <string name="meter_scale_max">30</string>
     <string name="threshold_marker">Threshold %1$.0f dBFS</string>
     <string name="section_threshold">Volume threshold</string>
     <string name="threshold_value">%1$.0f dBFS</string>
@@ -22,7 +22,9 @@
     <string name="permission_denied">Microphone permission was denied. Monitoring stays stopped.</string>
     <string name="capture_failed">Microphone capture could not start.</string>
     <string name="capture_interrupted">Microphone capture stopped because the input was interrupted.</string>
-    <string name="capture_background_stopped">Monitoring stopped. Background capture needs a foreground service, which is not implemented yet.</string>
+    <string name="capture_background_stopped">Monitoring stopped. Android did not allow the listening notification to stay active.</string>
+    <string name="monitoring_channel">Listening</string>
+    <string name="monitoring_notification">YST is listening for speech</string>
     <string name="section_response">Response</string>
     <string name="last_played_label">Last played sound</string>
     <string name="last_played_none">None</string>

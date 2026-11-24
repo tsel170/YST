@@ -6,9 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.yst.ui.MainScreen
-import com.example.yst.ui.MainViewModelFactory
 import com.example.yst.ui.theme.VoiceTriggerTheme
 
 class MainActivity : ComponentActivity() {
@@ -20,7 +18,7 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             VoiceTriggerTheme {
-                MainScreen(viewModel = viewModel(factory = MainViewModelFactory(application)))
+                MainScreen(viewModel = MonitoringRegistry.get(application))
             }
         }
     }

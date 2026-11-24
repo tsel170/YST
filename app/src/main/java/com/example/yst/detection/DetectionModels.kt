@@ -1,7 +1,7 @@
 package com.example.yst.detection
 
 data class DetectionSettings(
-    val volumeThresholdDbFs: Float = -30f,
+    val volumeThresholdDbFs: Float = -10f,
     val requiredLoudSpeechMs: Long = 1_200L,
     val silenceTimeoutMs: Long = 1_500L,
     val minResponseIntervalMs: Long = 10_000L,

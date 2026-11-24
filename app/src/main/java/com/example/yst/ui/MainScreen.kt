@@ -1,8 +1,8 @@
 package com.example.yst.ui
 
 import android.Manifest
-import android.app.Activity
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -30,7 +30,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -42,14 +41,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.yst.MonitoringService
 import com.example.yst.R
 import com.example.yst.detection.DetectionPhase
 import com.example.yst.detection.SoundClip
@@ -61,12 +58,13 @@ fun MainScreen(viewModel: MainViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
+        ActivityResultContracts.RequestMultiplePermissions(),
     ) { granted ->
-        if (granted) {
-            viewModel.startMonitoring()
+        val microphoneGranted = granted[Manifest.permission.RECORD_AUDIO] == true ||
+            hasPermission(context, Manifest.permission.RECORD_AUDIO)
+        if (microphoneGranted) {
+            MonitoringService.start(context)
         } else {
             viewModel.onPermissionDenied()
         }
@@ -77,18 +75,14 @@ fun MainScreen(viewModel: MainViewModel) {
         viewModel.importUris(uris)
     }
 
-    DisposableEffect(lifecycleOwner, viewModel) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
-                val activity = context as? Activity
-                val rotating = activity?.isChangingConfigurations == true
-                if (!rotating) {
-                    viewModel.onAppBackgrounded()
-                }
-            }
+    LaunchedEffect(viewModel) {
+        if (hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
+            MonitoringService.start(context)
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        val missing = missingStartupPermissions(context)
+        if (missing.isNotEmpty()) {
+            permissionLauncher.launch(missing)
+        }
     }
 
     LaunchedEffect(viewModel) {
@@ -115,13 +109,17 @@ fun MainScreen(viewModel: MainViewModel) {
         onMonitoringClicked = {
             if (state.monitoringActive) {
                 viewModel.stopMonitoring()
-            } else if (
-                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                viewModel.startMonitoring()
+                MonitoringService.stop(context)
             } else {
-                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                val missing = missingStartupPermissions(context)
+                if (hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
+                    MonitoringService.start(context)
+                    if (missing.isNotEmpty()) {
+                        permissionLauncher.launch(missing)
+                    }
+                } else {
+                    permissionLauncher.launch(missing)
+                }
             }
         },
         onAddFilesClicked = { openAudioFiles.launch(arrayOf("audio/*")) },
@@ -510,6 +508,21 @@ private fun statusColor(status: MonitoringStatus): Color {
         MonitoringStatus.Listening -> MaterialTheme.colorScheme.secondary
         MonitoringStatus.LoudSpeechDetected -> MaterialTheme.colorScheme.primary
     }
+}
+
+private fun hasPermission(context: android.content.Context, permission: String): Boolean {
+    return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun missingStartupPermissions(context: android.content.Context): Array<String> {
+    val missing = mutableListOf<String>()
+    if (!hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
+        missing += Manifest.permission.RECORD_AUDIO
+    }
+    if (Build.VERSION.SDK_INT >= 33 && !hasPermission(context, Manifest.permission.POST_NOTIFICATIONS)) {
+        missing += Manifest.permission.POST_NOTIFICATIONS
+    }
+    return missing.toTypedArray()
 }
 
 private fun meterFraction(decibels: Float): Float {
