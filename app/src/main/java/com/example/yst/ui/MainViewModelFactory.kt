@@ -8,6 +8,8 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.yst.audio.AudioMonitor
 import com.example.yst.audio.HandlerTaskRunner
 import com.example.yst.playback.SoundPlayer
+import com.example.yst.sounds.BundledRawSounds
+import com.example.yst.sounds.MergedSoundLibrary
 import com.example.yst.sounds.PersistedSoundLibrary
 
 class MainViewModelFactory(
@@ -18,7 +20,11 @@ class MainViewModelFactory(
             error("Unknown ViewModel: ${modelClass.name}")
         }
         val handler = Handler(Looper.getMainLooper())
-        val sounds = PersistedSoundLibrary(application)
+        val imported = PersistedSoundLibrary(application)
+        val sounds = MergedSoundLibrary(
+            bundled = { BundledRawSounds.list(application) },
+            persisted = imported,
+        )
         val soundPlayer = SoundPlayer(application)
         @Suppress("UNCHECKED_CAST")
         return MainViewModel(
@@ -28,7 +34,10 @@ class MainViewModelFactory(
             soundLibrary = sounds,
             player = soundPlayer,
             releasePlayer = soundPlayer::release,
-            importFromDevice = sounds::importUris,
+            importFromDevice = { uris ->
+                imported.importUris(uris)
+                sounds.load()
+            },
         ) as T
     }
 }

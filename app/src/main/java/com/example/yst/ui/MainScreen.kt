@@ -53,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.yst.R
 import com.example.yst.detection.DetectionPhase
 import com.example.yst.detection.SoundClip
+import com.example.yst.sounds.BundledRawSounds
 import com.example.yst.ui.theme.VoiceTriggerTheme
 
 @Composable
@@ -380,8 +381,10 @@ private fun SoundCollectionCard(
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyLarge,
                     )
-                    TextButton(onClick = { onRemoveSound(clip.id) }) {
-                        Text(stringResource(R.string.remove_sound))
+                    if (!BundledRawSounds.isBundled(clip.id)) {
+                        TextButton(onClick = { onRemoveSound(clip.id) }) {
+                            Text(stringResource(R.string.remove_sound))
+                        }
                     }
                 }
             }
