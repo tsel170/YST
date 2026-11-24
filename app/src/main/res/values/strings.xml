@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">VoiceTrigger</string>
+    <string name="app_name">YST</string>
     <string name="section_status">Status</string>
     <string name="status_stopped">Stopped</string>
     <string name="status_listening">Listening</string>
