@@ -13,7 +13,7 @@
     <string name="level_unit">dBFS</string>
     <string name="level_unavailable_detail">No live microphone level. Capture is not running.</string>
     <string name="meter_scale_min">-60</string>
-    <string name="meter_scale_max">30</string>
+    <string name="meter_scale_max">90</string>
     <string name="threshold_marker">Threshold %1$.0f dBFS</string>
     <string name="section_threshold">Volume threshold</string>
     <string name="threshold_value">%1$.0f dBFS</string>

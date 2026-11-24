@@ -297,7 +297,7 @@ class MainViewModel(
 
     companion object {
         const val MIN_DB = -60f
-        const val MAX_DB = 30f
+        const val MAX_DB = 90f
         const val MIN_SPEECH_MS = 200f
         const val MAX_SPEECH_MS = 5_000f
         const val MIN_SILENCE_MS = 200f

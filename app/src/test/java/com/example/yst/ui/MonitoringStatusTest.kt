@@ -148,10 +148,10 @@ class MainViewModelTest {
     fun thresholdSliderExtendsAboveFullScale() {
         val viewModel = viewModel()
 
-        viewModel.onThresholdChanged(30f)
-        assertEquals(30f, viewModel.uiState.value.settings.volumeThresholdDbFs)
+        viewModel.onThresholdChanged(90f)
+        assertEquals(90f, viewModel.uiState.value.settings.volumeThresholdDbFs)
 
-        viewModel.onThresholdChanged(80f)
+        viewModel.onThresholdChanged(200f)
         assertEquals(MainViewModel.MAX_DB, viewModel.uiState.value.settings.volumeThresholdDbFs)
     }
 
