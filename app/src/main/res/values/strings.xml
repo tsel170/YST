@@ -26,7 +26,7 @@
     <string name="section_response">Response</string>
     <string name="last_played_label">Last played sound</string>
     <string name="last_played_none">None</string>
-    <string name="playback_unavailable">Audio playback is not implemented, so no sound has been played.</string>
+    <string name="playback_unavailable">Nothing has played yet.</string>
     <string name="next_interval_label">Next response interval</string>
     <string name="next_interval_unscheduled">Not scheduled</string>
     <string name="next_interval_value">%1$.1f s</string>
@@ -34,7 +34,8 @@
     <string name="section_sounds">Sound collection</string>
     <string name="sounds_empty">No audio files imported.</string>
     <string name="add_files">Add Files</string>
-    <string name="import_unavailable">Adding audio files is not available. File import is not implemented.</string>
+    <string name="remove_sound">Remove</string>
+    <string name="import_failed">Those files could not be added.</string>
     <string name="section_settings">Settings</string>
     <string name="speech_duration">Speech duration</string>
     <string name="silence_timeout">Silence timeout</string>

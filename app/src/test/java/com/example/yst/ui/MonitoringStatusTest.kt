@@ -5,7 +5,10 @@ import com.example.yst.audio.AudioCaptureFailure
 import com.example.yst.audio.AudioCaptureListener
 import com.example.yst.detection.DetectionPhase
 import com.example.yst.detection.ManualClock
+import com.example.yst.detection.ResponsePlayer
+import com.example.yst.detection.SoundClip
 import com.example.yst.detection.SpeechFrame
+import com.example.yst.sounds.MemorySoundLibrary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -48,7 +51,6 @@ class MainViewModelTest {
         val viewModel = viewModel()
 
         viewModel.onThresholdChanged(-24f)
-        viewModel.onAddFilesClicked()
 
         val state = viewModel.uiState.value
         assertFalse(state.monitoringActive)
@@ -153,6 +155,32 @@ class MainViewModelTest {
         assertEquals(-10f, viewModel.uiState.value.levelDbFs)
     }
 
+    @Test
+    fun addedSoundIsListedAndPlayedWhenACycleStarts() {
+        val clip = SoundClip(id = "content://sounds/alpha", displayName = "Alpha")
+        val player = RecordingPlayer()
+        val capture = FakeAudioCapture()
+        val viewModel = MainViewModel(
+            audioCapture = capture,
+            taskRunner = ManualClock(),
+            deliver = { block -> block() },
+            soundLibrary = MemorySoundLibrary(),
+            player = player,
+        )
+
+        viewModel.addSounds(listOf(clip))
+        viewModel.startMonitoring()
+        capture.emit(SpeechFrame(timestampMs = 0L, levelDbFs = -10f, isSpeech = true))
+        capture.emit(SpeechFrame(timestampMs = 1_200L, levelDbFs = -10f, isSpeech = true))
+
+        assertEquals(listOf(clip), viewModel.uiState.value.sounds)
+        assertEquals(listOf(clip.id), player.playedIds)
+        assertEquals("Alpha", viewModel.uiState.value.lastPlayedSound)
+
+        viewModel.removeSound(clip.id)
+        assertTrue(viewModel.uiState.value.sounds.isEmpty())
+    }
+
     private fun viewModel(capture: AudioCapture = FakeAudioCapture()): MainViewModel {
         return MainViewModel(
             audioCapture = capture,
@@ -184,6 +212,22 @@ class MainViewModelTest {
 
         fun emit(frame: SpeechFrame) {
             listener?.onFrame(frame)
+        }
+    }
+
+    private class RecordingPlayer : ResponsePlayer {
+        val playedIds = mutableListOf<String>()
+        override var isPlaying: Boolean = false
+        private var onCompletion: () -> Unit = {}
+
+        override fun play(clip: SoundClip) {
+            check(!isPlaying)
+            isPlaying = true
+            playedIds += clip.id
+        }
+
+        override fun setOnCompletionListener(listener: () -> Unit) {
+            onCompletion = listener
         }
     }
 }

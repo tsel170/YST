@@ -28,6 +28,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.yst.R
 import com.example.yst.detection.DetectionPhase
+import com.example.yst.detection.SoundClip
 import com.example.yst.ui.theme.VoiceTriggerTheme
 
 @Composable
@@ -67,6 +69,11 @@ fun MainScreen(viewModel: MainViewModel) {
         } else {
             viewModel.onPermissionDenied()
         }
+    }
+    val openAudioFiles = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        viewModel.importUris(uris)
     }
 
     DisposableEffect(lifecycleOwner, viewModel) {
@@ -86,7 +93,7 @@ fun MainScreen(viewModel: MainViewModel) {
     LaunchedEffect(viewModel) {
         viewModel.messages.collect { notice ->
             val message = when (notice) {
-                UserNotice.ImportUnavailable -> context.getString(R.string.import_unavailable)
+                UserNotice.ImportFailed -> context.getString(R.string.import_failed)
                 UserNotice.PermissionDenied -> context.getString(R.string.permission_denied)
                 UserNotice.CaptureFailed -> context.getString(R.string.capture_failed)
                 UserNotice.CaptureInterrupted -> context.getString(R.string.capture_interrupted)
@@ -116,7 +123,8 @@ fun MainScreen(viewModel: MainViewModel) {
                 permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             }
         },
-        onAddFilesClicked = viewModel::onAddFilesClicked,
+        onAddFilesClicked = { openAudioFiles.launch(arrayOf("audio/*")) },
+        onRemoveSound = viewModel::removeSound,
     )
 }
 
@@ -131,6 +139,7 @@ private fun MainScreenContent(
     onMaxIntervalChanged: (Float) -> Unit,
     onMonitoringClicked: () -> Unit,
     onAddFilesClicked: () -> Unit,
+    onRemoveSound: (String) -> Unit,
 ) {
     val status = monitoringStatus(state.monitoringActive, state.phase)
     Scaffold(
@@ -187,8 +196,9 @@ private fun MainScreenContent(
                 }
                 ResponseCard(state = state)
                 SoundCollectionCard(
-                    sounds = state.sounds.map { it.displayName },
+                    sounds = state.sounds,
                     onAddFilesClicked = onAddFilesClicked,
+                    onRemoveSound = onRemoveSound,
                 )
                 SettingsCard(
                     state = state,
@@ -347,8 +357,9 @@ private fun ResponseCard(state: MainUiState) {
 
 @Composable
 private fun SoundCollectionCard(
-    sounds: List<String>,
+    sounds: List<SoundClip>,
     onAddFilesClicked: () -> Unit,
+    onRemoveSound: (String) -> Unit,
 ) {
     SectionCard {
         SectionTitle(stringResource(R.string.section_sounds))
@@ -359,8 +370,20 @@ private fun SoundCollectionCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            sounds.forEach { name ->
-                Text(text = name, style = MaterialTheme.typography.bodyLarge)
+            sounds.forEach { clip ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = clip.displayName,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    TextButton(onClick = { onRemoveSound(clip.id) }) {
+                        Text(stringResource(R.string.remove_sound))
+                    }
+                }
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
@@ -506,6 +529,7 @@ private fun MainScreenPreview() {
                 onMaxIntervalChanged = {},
                 onMonitoringClicked = {},
                 onAddFilesClicked = {},
+                onRemoveSound = {},
             )
         }
     }

@@ -1,5 +1,6 @@
 package com.example.yst.ui
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import com.example.yst.audio.AudioCapture
 import com.example.yst.audio.AudioCaptureFailure
@@ -13,6 +14,8 @@ import com.example.yst.detection.SoundClip
 import com.example.yst.detection.SpeechDetector
 import com.example.yst.detection.SpeechFrame
 import com.example.yst.detection.TaskRunner
+import com.example.yst.sounds.MemorySoundLibrary
+import com.example.yst.sounds.SoundLibrary
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -21,7 +24,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 enum class UserNotice {
-    ImportUnavailable,
+    ImportFailed,
     PermissionDenied,
     CaptureFailed,
     CaptureInterrupted,
@@ -42,8 +45,14 @@ class MainViewModel(
     private val audioCapture: AudioCapture,
     private val taskRunner: TaskRunner,
     private val deliver: (() -> Unit) -> Unit,
+    private val soundLibrary: SoundLibrary = MemorySoundLibrary(),
+    private val player: ResponsePlayer = IdleResponsePlayer,
+    private val releasePlayer: () -> Unit = {},
+    private val importFromDevice: (List<Uri>) -> List<SoundClip> = { emptyList() },
 ) : ViewModel() {
     private var settings = DetectionSettings()
+    private var sounds: List<SoundClip> = soundLibrary.load()
+    private var lastPlayedSound: String? = null
     private var monitoringActive = false
     private var levelDbFs: Float? = null
     private var phase = DetectionPhase.Idle
@@ -96,8 +105,30 @@ class MainViewModel(
         }
     }
 
-    fun onAddFilesClicked() {
-        _messages.tryEmit(UserNotice.ImportUnavailable)
+    fun addSounds(clips: List<SoundClip>) {
+        if (clips.isEmpty()) {
+            return
+        }
+        sounds = soundLibrary.add(clips)
+        publish()
+    }
+
+    fun importUris(uris: List<Uri>) {
+        if (uris.isEmpty()) {
+            return
+        }
+        val updated = importFromDevice(uris)
+        sounds = updated
+        publish()
+        val imported = uris.any { uri -> updated.any { it.id == uri.toString() } }
+        if (!imported) {
+            _messages.tryEmit(UserNotice.ImportFailed)
+        }
+    }
+
+    fun removeSound(id: String) {
+        sounds = soundLibrary.remove(id)
+        publish()
     }
 
     fun onPermissionDenied() {
@@ -112,8 +143,8 @@ class MainViewModel(
         val trackedRunner = TrackingTaskRunner(taskRunner)
         val controller = DetectionController(
             detector = SpeechDetector(settings),
-            player = IdleResponsePlayer,
-            clips = { emptyList() },
+            player = playback,
+            clips = { sounds },
             settings = { settings },
             runner = trackedRunner,
         )
@@ -172,6 +203,7 @@ class MainViewModel(
 
     override fun onCleared() {
         stopMonitoring()
+        releasePlayer()
         super.onCleared()
     }
 
@@ -200,10 +232,25 @@ class MainViewModel(
             phase = if (monitoringActive) phase else DetectionPhase.Idle,
             monitoringActive = monitoringActive,
             levelDbFs = if (monitoringActive) levelDbFs else null,
-            lastPlayedSound = null,
+            lastPlayedSound = lastPlayedSound,
             nextResponseIntervalMs = null,
-            sounds = emptyList(),
+            sounds = sounds,
         )
+    }
+
+    private val playback = object : ResponsePlayer {
+        override val isPlaying: Boolean
+            get() = player.isPlaying
+
+        override fun setOnCompletionListener(listener: () -> Unit) {
+            player.setOnCompletionListener(listener)
+        }
+
+        override fun play(clip: SoundClip) {
+            lastPlayedSound = clip.displayName
+            player.play(clip)
+            publish()
+        }
     }
 
     private fun Float.toMillis(): Long = (this * 1_000f).toLong()
