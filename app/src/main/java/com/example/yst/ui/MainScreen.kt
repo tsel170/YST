@@ -1,5 +1,10 @@
 package com.example.yst.ui
 
+import android.Manifest
+import android.app.Activity
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +29,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -34,6 +40,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -48,12 +58,39 @@ fun MainScreen(viewModel: MainViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            viewModel.startMonitoring()
+        } else {
+            viewModel.onPermissionDenied()
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                val activity = context as? Activity
+                val rotating = activity?.isChangingConfigurations == true
+                if (!rotating) {
+                    viewModel.onAppBackgrounded()
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.messages.collect { notice ->
             val message = when (notice) {
-                UserNotice.MonitoringUnavailable -> context.getString(R.string.monitoring_unavailable)
                 UserNotice.ImportUnavailable -> context.getString(R.string.import_unavailable)
+                UserNotice.PermissionDenied -> context.getString(R.string.permission_denied)
+                UserNotice.CaptureFailed -> context.getString(R.string.capture_failed)
+                UserNotice.CaptureInterrupted -> context.getString(R.string.capture_interrupted)
+                UserNotice.BackgroundCaptureUnavailable -> context.getString(R.string.capture_background_stopped)
             }
             snackbarHostState.showSnackbar(message)
         }
@@ -67,7 +104,18 @@ fun MainScreen(viewModel: MainViewModel) {
         onSilenceTimeoutChanged = viewModel::onSilenceTimeoutChanged,
         onMinIntervalChanged = viewModel::onMinIntervalChanged,
         onMaxIntervalChanged = viewModel::onMaxIntervalChanged,
-        onMonitoringClicked = viewModel::onMonitoringClicked,
+        onMonitoringClicked = {
+            if (state.monitoringActive) {
+                viewModel.stopMonitoring()
+            } else if (
+                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                viewModel.startMonitoring()
+            } else {
+                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        },
         onAddFilesClicked = viewModel::onAddFilesClicked,
     )
 }

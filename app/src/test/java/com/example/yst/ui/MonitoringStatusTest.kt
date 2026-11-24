@@ -1,9 +1,15 @@
 package com.example.yst.ui
 
+import com.example.yst.audio.AudioCapture
+import com.example.yst.audio.AudioCaptureFailure
+import com.example.yst.audio.AudioCaptureListener
 import com.example.yst.detection.DetectionPhase
+import com.example.yst.detection.ManualClock
+import com.example.yst.detection.SpeechFrame
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MonitoringStatusTest {
@@ -38,11 +44,10 @@ class MonitoringStatusTest {
 
 class MainViewModelTest {
     @Test
-    fun controlsDoNotInventMonitoringLevelOrSounds() {
-        val viewModel = MainViewModel()
+    fun settingsDoNotInventLevelOrSounds() {
+        val viewModel = viewModel()
 
         viewModel.onThresholdChanged(-24f)
-        viewModel.onMonitoringClicked()
         viewModel.onAddFilesClicked()
 
         val state = viewModel.uiState.value
@@ -50,18 +55,14 @@ class MainViewModelTest {
         assertNull(state.levelDbFs)
         assertNull(state.lastPlayedSound)
         assertNull(state.nextResponseIntervalMs)
-        assertEquals(emptyList<Any>(), state.sounds)
+        assertTrue(state.sounds.isEmpty())
         assertEquals(DetectionPhase.Idle, state.phase)
         assertEquals(-24f, state.settings.volumeThresholdDbFs)
-        assertEquals(
-            MonitoringStatus.Stopped,
-            monitoringStatus(state.monitoringActive, state.phase),
-        )
     }
 
     @Test
     fun intervalSlidersStayOrderedThroughDetectionSettings() {
-        val viewModel = MainViewModel()
+        val viewModel = viewModel()
 
         viewModel.onMinIntervalChanged(25f)
         viewModel.onMaxIntervalChanged(8f)
@@ -69,5 +70,120 @@ class MainViewModelTest {
         val settings = viewModel.uiState.value.settings
         assertEquals(8_000L, settings.minResponseIntervalMs)
         assertEquals(8_000L, settings.maxResponseIntervalMs)
+    }
+
+    @Test
+    fun failedStartDoesNotActivateMonitoring() {
+        val capture = FakeAudioCapture(failure = AudioCaptureFailure.MissingPermission)
+        val viewModel = viewModel(capture)
+
+        viewModel.startMonitoring()
+
+        assertFalse(viewModel.uiState.value.monitoringActive)
+        assertNull(viewModel.uiState.value.levelDbFs)
+        assertEquals(DetectionPhase.Idle, viewModel.uiState.value.phase)
+    }
+
+    @Test
+    fun framesUpdateLiveLevelAndExistingDetector() {
+        val capture = FakeAudioCapture()
+        val viewModel = viewModel(capture)
+
+        viewModel.startMonitoring()
+        capture.emit(SpeechFrame(timestampMs = 0L, levelDbFs = -10f, isSpeech = true))
+
+        assertTrue(viewModel.uiState.value.monitoringActive)
+        assertEquals(-10f, viewModel.uiState.value.levelDbFs)
+        assertEquals(DetectionPhase.Arming, viewModel.uiState.value.phase)
+        assertEquals(
+            MonitoringStatus.Listening,
+            monitoringStatus(true, viewModel.uiState.value.phase),
+        )
+
+        capture.emit(SpeechFrame(timestampMs = 1_200L, levelDbFs = -18f, isSpeech = true))
+
+        assertEquals(-18f, viewModel.uiState.value.levelDbFs)
+        assertEquals(DetectionPhase.Active, viewModel.uiState.value.phase)
+        assertEquals(
+            MonitoringStatus.LoudSpeechDetected,
+            monitoringStatus(true, viewModel.uiState.value.phase),
+        )
+    }
+
+    @Test
+    fun volumeDipKeepsTheCycleAndTheLiveLevel() {
+        val capture = FakeAudioCapture()
+        val viewModel = viewModel(capture)
+        viewModel.startMonitoring()
+        capture.emit(SpeechFrame(timestampMs = 0L, levelDbFs = -10f, isSpeech = true))
+        capture.emit(SpeechFrame(timestampMs = 1_200L, levelDbFs = -10f, isSpeech = true))
+
+        capture.emit(SpeechFrame(timestampMs = 1_500L, levelDbFs = -55f, isSpeech = true))
+
+        assertEquals(DetectionPhase.Active, viewModel.uiState.value.phase)
+        assertEquals(-55f, viewModel.uiState.value.levelDbFs)
+    }
+
+    @Test
+    fun stopClearsTheLiveLevel() {
+        val capture = FakeAudioCapture()
+        val viewModel = viewModel(capture)
+        viewModel.startMonitoring()
+        capture.emit(SpeechFrame(timestampMs = 0L, levelDbFs = -12f, isSpeech = false))
+
+        viewModel.stopMonitoring()
+        capture.emit(SpeechFrame(timestampMs = 20L, levelDbFs = -3f, isSpeech = true))
+
+        assertFalse(viewModel.uiState.value.monitoringActive)
+        assertNull(viewModel.uiState.value.levelDbFs)
+        assertEquals(DetectionPhase.Idle, viewModel.uiState.value.phase)
+        assertTrue(capture.stopped)
+    }
+
+    @Test
+    fun thresholdChangeStillGatesTheExistingDetector() {
+        val capture = FakeAudioCapture()
+        val viewModel = viewModel(capture)
+        viewModel.onThresholdChanged(0f)
+        viewModel.startMonitoring()
+
+        capture.emit(SpeechFrame(timestampMs = 2_000L, levelDbFs = -10f, isSpeech = true))
+
+        assertEquals(DetectionPhase.Idle, viewModel.uiState.value.phase)
+        assertEquals(-10f, viewModel.uiState.value.levelDbFs)
+    }
+
+    private fun viewModel(capture: AudioCapture = FakeAudioCapture()): MainViewModel {
+        return MainViewModel(
+            audioCapture = capture,
+            taskRunner = ManualClock(),
+            deliver = { block -> block() },
+        )
+    }
+
+    private class FakeAudioCapture(
+        private val failure: AudioCaptureFailure? = null,
+    ) : AudioCapture {
+        var listener: AudioCaptureListener? = null
+        var stopped: Boolean = false
+
+        override fun start(listener: AudioCaptureListener) {
+            this.listener = listener
+            val startFailure = failure
+            if (startFailure != null) {
+                listener.onFailure(startFailure)
+                return
+            }
+            listener.onStarted()
+        }
+
+        override fun stop() {
+            stopped = true
+            listener = null
+        }
+
+        fun emit(frame: SpeechFrame) {
+            listener?.onFrame(frame)
+        }
     }
 }

@@ -56,6 +56,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.android.vad.webrtc)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
