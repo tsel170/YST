@@ -15,6 +15,7 @@ object BundledRarityDefaults {
     val byResourceName: Map<String, String> = mapOf(
         
          "yst_qa" to RarityIds.RARE,
+         "yst_light" to RarityIds.RARE,
          "yst_legend" to RarityIds.LEGENDARY,
     )
 }
