@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -444,6 +445,7 @@ private fun SoundRow(
         sound.bundled -> stringResource(R.string.sound_default)
         else -> stringResource(R.string.sound_imported)
     }
+    var confirmRemoval by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -457,9 +459,37 @@ private fun SoundRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            TextButton(onClick = { onRemoveSound(sound.clip.id) }) {
-                Text(stringResource(R.string.remove_sound))
+            TextButton(onClick = { confirmRemoval = true }) {
+                Text(
+                    text = stringResource(R.string.remove_sound),
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
+        }
+        if (confirmRemoval) {
+            AlertDialog(
+                onDismissRequest = { confirmRemoval = false },
+                title = { Text(stringResource(R.string.remove_sound_title)) },
+                text = { Text(stringResource(R.string.remove_sound_message, sound.clip.displayName)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            confirmRemoval = false
+                            onRemoveSound(sound.clip.id)
+                        },
+                    ) {
+                        Text(
+                            text = stringResource(R.string.remove_sound),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmRemoval = false }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                },
+            )
         }
         RarityMenu(
             label = stringResource(R.string.sound_rarity) + ": " + rarityName,

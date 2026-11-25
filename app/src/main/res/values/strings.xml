@@ -37,6 +37,9 @@
     <string name="sounds_empty">No sounds in the collection.</string>
     <string name="add_files">Add Files</string>
     <string name="remove_sound">Remove</string>
+    <string name="remove_sound_title">Remove this sound?</string>
+    <string name="remove_sound_message">%1$s will be removed from the collection and will no longer play.</string>
+    <string name="cancel">Cancel</string>
     <string name="sound_default">Default</string>
     <string name="sound_imported">Imported</string>
     <string name="sound_unavailable">Unavailable</string>
