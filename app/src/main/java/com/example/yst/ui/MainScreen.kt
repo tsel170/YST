@@ -21,8 +21,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
@@ -30,9 +33,12 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -49,8 +55,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.yst.MonitoringService
 import com.example.yst.R
 import com.example.yst.detection.DetectionPhase
-import com.example.yst.detection.SoundClip
-import com.example.yst.sounds.BundledRawSounds
+import com.example.yst.sounds.ManagedSound
+import com.example.yst.sounds.RarityTier
 import com.example.yst.ui.theme.VoiceTriggerTheme
 
 @Composable
@@ -124,6 +130,12 @@ fun MainScreen(viewModel: MainViewModel) {
         },
         onAddFilesClicked = { openAudioFiles.launch(arrayOf("audio/*")) },
         onRemoveSound = viewModel::removeSound,
+        onAssignRarity = viewModel::assignRarity,
+        onRenameRarity = viewModel::renameRarity,
+        onRarityProbabilityChanged = viewModel::setRarityProbability,
+        onAddRarity = { viewModel.addRarity("Custom") },
+        onDeleteRarity = viewModel::deleteRarity,
+        onRestoreRarities = viewModel::restoreDefaultRarities,
     )
 }
 
@@ -139,6 +151,12 @@ private fun MainScreenContent(
     onMonitoringClicked: () -> Unit,
     onAddFilesClicked: () -> Unit,
     onRemoveSound: (String) -> Unit,
+    onAssignRarity: (String, String) -> Unit,
+    onRenameRarity: (String, String) -> Unit,
+    onRarityProbabilityChanged: (String, Int) -> Unit,
+    onAddRarity: () -> Unit,
+    onDeleteRarity: (String) -> Unit,
+    onRestoreRarities: () -> Unit,
 ) {
     val status = monitoringStatus(state.monitoringActive, state.phase)
     Scaffold(
@@ -195,9 +213,16 @@ private fun MainScreenContent(
                 }
                 ResponseCard(state = state)
                 SoundCollectionCard(
-                    sounds = state.sounds,
+                    sounds = state.managedSounds,
+                    rarities = state.rarities,
                     onAddFilesClicked = onAddFilesClicked,
                     onRemoveSound = onRemoveSound,
+                    onAssignRarity = onAssignRarity,
+                    onRenameRarity = onRenameRarity,
+                    onRarityProbabilityChanged = onRarityProbabilityChanged,
+                    onAddRarity = onAddRarity,
+                    onDeleteRarity = onDeleteRarity,
+                    onRestoreRarities = onRestoreRarities,
                 )
                 SettingsCard(
                     state = state,
@@ -356,9 +381,16 @@ private fun ResponseCard(state: MainUiState) {
 
 @Composable
 private fun SoundCollectionCard(
-    sounds: List<SoundClip>,
+    sounds: List<ManagedSound>,
+    rarities: List<RarityTier>,
     onAddFilesClicked: () -> Unit,
     onRemoveSound: (String) -> Unit,
+    onAssignRarity: (String, String) -> Unit,
+    onRenameRarity: (String, String) -> Unit,
+    onRarityProbabilityChanged: (String, Int) -> Unit,
+    onAddRarity: () -> Unit,
+    onDeleteRarity: (String) -> Unit,
+    onRestoreRarities: () -> Unit,
 ) {
     SectionCard {
         SectionTitle(stringResource(R.string.section_sounds))
@@ -369,21 +401,14 @@ private fun SoundCollectionCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            sounds.forEach { clip ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = clip.displayName,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyLarge,
+            sounds.forEach { sound ->
+                key(sound.clip.id) {
+                    SoundRow(
+                        sound = sound,
+                        rarities = rarities,
+                        onRemoveSound = onRemoveSound,
+                        onAssignRarity = onAssignRarity,
                     )
-                    if (!BundledRawSounds.isBundled(clip.id)) {
-                        TextButton(onClick = { onRemoveSound(clip.id) }) {
-                            Text(stringResource(R.string.remove_sound))
-                        }
-                    }
                 }
             }
         }
@@ -394,6 +419,124 @@ private fun SoundCollectionCard(
         ) {
             Text(stringResource(R.string.add_files))
         }
+        Spacer(modifier = Modifier.height(20.dp))
+        RaritySection(
+            rarities = rarities,
+            onRenameRarity = onRenameRarity,
+            onRarityProbabilityChanged = onRarityProbabilityChanged,
+            onAddRarity = onAddRarity,
+            onDeleteRarity = onDeleteRarity,
+            onRestoreRarities = onRestoreRarities,
+        )
+    }
+}
+
+@Composable
+private fun SoundRow(
+    sound: ManagedSound,
+    rarities: List<RarityTier>,
+    onRemoveSound: (String) -> Unit,
+    onAssignRarity: (String, String) -> Unit,
+) {
+    val rarityName = rarities.firstOrNull { it.id == sound.rarityId }?.name ?: sound.rarityId
+    val source = when {
+        !sound.playable -> stringResource(R.string.sound_unavailable)
+        sound.bundled -> stringResource(R.string.sound_default)
+        else -> stringResource(R.string.sound_imported)
+    }
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = sound.clip.displayName, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    text = source,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = { onRemoveSound(sound.clip.id) }) {
+                Text(stringResource(R.string.remove_sound))
+            }
+        }
+        RarityMenu(
+            label = stringResource(R.string.sound_rarity) + ": " + rarityName,
+            rarities = rarities,
+            onSelected = { rarityId -> onAssignRarity(sound.clip.id, rarityId) },
+        )
+    }
+}
+
+@Composable
+private fun RarityMenu(
+    label: String,
+    rarities: List<RarityTier>,
+    onSelected: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text(label)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            rarities.sortedBy { it.order }.forEach { tier ->
+                DropdownMenuItem(
+                    text = { Text("${tier.name} ${tier.probabilityPercent}%") },
+                    onClick = {
+                        expanded = false
+                        onSelected(tier.id)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RaritySection(
+    rarities: List<RarityTier>,
+    onRenameRarity: (String, String) -> Unit,
+    onRarityProbabilityChanged: (String, Int) -> Unit,
+    onAddRarity: () -> Unit,
+    onDeleteRarity: (String) -> Unit,
+    onRestoreRarities: () -> Unit,
+) {
+    SectionTitle(stringResource(R.string.section_rarities))
+    Text(
+        text = stringResource(R.string.rarity_balance),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    rarities.sortedBy { it.order }.forEach { tier ->
+        OutlinedTextField(
+            value = tier.name,
+            onValueChange = { onRenameRarity(tier.id, it) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text(tier.name) },
+        )
+        SettingSlider(
+            title = stringResource(R.string.rarity_probability),
+            valueLabel = stringResource(R.string.rarity_percent, tier.probabilityPercent),
+            value = tier.probabilityPercent.toFloat(),
+            valueRange = 0f..100f,
+            onValueChange = { onRarityProbabilityChanged(tier.id, it.toInt()) },
+        )
+        if (tier.custom) {
+            TextButton(onClick = { onDeleteRarity(tier.id) }) {
+                Text(stringResource(R.string.delete_rarity))
+            }
+        }
+    }
+    OutlinedButton(onClick = onAddRarity, modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.add_rarity))
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+    OutlinedButton(onClick = onRestoreRarities, modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.restore_rarities))
     }
 }
 
@@ -546,6 +689,12 @@ private fun MainScreenPreview() {
                 onMonitoringClicked = {},
                 onAddFilesClicked = {},
                 onRemoveSound = {},
+                onAssignRarity = { _, _ -> },
+                onRenameRarity = { _, _ -> },
+                onRarityProbabilityChanged = { _, _ -> },
+                onAddRarity = {},
+                onDeleteRarity = {},
+                onRestoreRarities = {},
             )
         }
     }

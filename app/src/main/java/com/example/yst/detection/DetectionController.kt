@@ -18,6 +18,7 @@ class DetectionController(
     private val runner: TaskRunner,
     private val random: Random = Random.Default,
     private val selector: SoundSelector = SoundSelector(),
+    private val chooseClip: ((previousId: String?, random: Random) -> SoundClip?)? = null,
 ) {
     val phase: DetectionPhase
         get() = detector.currentPhase
@@ -64,7 +65,7 @@ class DetectionController(
             return
         }
         playWhenIdle = false
-        val clip = selector.pick(clips(), lastClipId, random)
+        val clip = chooseClip?.invoke(lastClipId, random) ?: selector.pick(clips(), lastClipId, random)
         if (clip != null) {
             lastClipId = clip.id
             player.play(clip)

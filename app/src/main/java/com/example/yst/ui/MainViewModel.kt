@@ -10,12 +10,19 @@ import com.example.yst.detection.DetectionController
 import com.example.yst.detection.DetectionPhase
 import com.example.yst.detection.DetectionSettings
 import com.example.yst.detection.ResponsePlayer
+import com.example.yst.detection.RaritySelector
 import com.example.yst.detection.SoundClip
 import com.example.yst.detection.SpeechDetector
 import com.example.yst.detection.SpeechFrame
 import com.example.yst.detection.TaskRunner
+import com.example.yst.sounds.CollectionConfig
+import com.example.yst.sounds.ManagedSound
+import com.example.yst.sounds.MemoryCollectionConfig
 import com.example.yst.sounds.MemorySoundLibrary
+import com.example.yst.sounds.RarityTier
+import com.example.yst.sounds.SoundCollectionEditor
 import com.example.yst.sounds.SoundLibrary
+import com.example.yst.sounds.defaultRarities
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -39,6 +46,8 @@ data class MainUiState(
     val lastPlayedSound: String? = null,
     val nextResponseIntervalMs: Long? = null,
     val sounds: List<SoundClip> = emptyList(),
+    val managedSounds: List<ManagedSound> = emptyList(),
+    val rarities: List<RarityTier> = defaultRarities(),
 )
 
 class MainViewModel(
@@ -50,9 +59,20 @@ class MainViewModel(
     private val releasePlayer: () -> Unit = {},
     private val importFromDevice: (List<Uri>) -> List<SoundClip> = { emptyList() },
     private val ownedByProcess: Boolean = false,
+    bundledSounds: () -> List<SoundClip> = { emptyList() },
+    collectionConfig: CollectionConfig = MemoryCollectionConfig(),
+    private val playable: (SoundClip) -> Boolean = { true },
 ) : ViewModel() {
+    private val collection = SoundCollectionEditor(
+        bundled = bundledSounds,
+        imported = soundLibrary,
+        config = collectionConfig,
+    )
+    private val raritySelector = RaritySelector()
     private var settings = DetectionSettings()
-    private var sounds: List<SoundClip> = soundLibrary.load()
+    private var sounds: List<SoundClip> = emptyList()
+    private var managedSounds: List<ManagedSound> = emptyList()
+    private var rarities: List<RarityTier> = defaultRarities()
     private var lastPlayedSound: String? = null
     private var monitoringActive = false
     private var startRequested = false
@@ -68,7 +88,7 @@ class MainViewModel(
     val messages: SharedFlow<UserNotice> = _messages.asSharedFlow()
 
     init {
-        publish()
+        reloadSounds()
     }
 
     fun onThresholdChanged(decibels: Float) {
@@ -111,8 +131,8 @@ class MainViewModel(
         if (clips.isEmpty()) {
             return
         }
-        sounds = soundLibrary.add(clips)
-        publish()
+        soundLibrary.add(clips)
+        reloadSounds()
     }
 
     fun importUris(uris: List<Uri>) {
@@ -120,17 +140,50 @@ class MainViewModel(
             return
         }
         val updated = importFromDevice(uris)
-        sounds = updated
-        publish()
-        val imported = uris.any { uri -> updated.any { it.id == uri.toString() } }
+        reloadSounds()
+        val imported = uris.any { uri -> updated.any { it.id == uri.toString() } || sounds.any { it.id == uri.toString() } }
         if (!imported) {
             _messages.tryEmit(UserNotice.ImportFailed)
         }
     }
 
     fun removeSound(id: String) {
-        sounds = soundLibrary.remove(id)
-        publish()
+        collection.remove(id)
+        reloadSounds()
+    }
+
+    fun assignRarity(soundId: String, rarityId: String) {
+        if (collection.assign(soundId, rarityId)) {
+            reloadSounds()
+        }
+    }
+
+    fun renameRarity(id: String, name: String) {
+        if (collection.renameRarity(id, name)) {
+            reloadSounds()
+        }
+    }
+
+    fun setRarityProbability(id: String, percent: Int) {
+        if (collection.setProbability(id, percent)) {
+            reloadSounds()
+        }
+    }
+
+    fun addRarity(name: String) {
+        collection.addRarity(name)
+        reloadSounds()
+    }
+
+    fun deleteRarity(id: String) {
+        if (collection.deleteRarity(id)) {
+            reloadSounds()
+        }
+    }
+
+    fun restoreDefaultRarities() {
+        collection.restoreDefaultRarities()
+        reloadSounds()
     }
 
     fun onPermissionDenied() {
@@ -150,6 +203,15 @@ class MainViewModel(
             clips = { sounds },
             settings = { settings },
             runner = trackedRunner,
+            chooseClip = { previousId, random ->
+                val snapshot = collection.snapshot(playable)
+                raritySelector.pick(
+                    sounds = snapshot.playableSelections(),
+                    rarities = snapshot.rarities,
+                    previousId = previousId,
+                    random = random,
+                )
+            },
         )
         session = ListeningSession(controller, trackedRunner)
         audioCapture.start(
@@ -232,6 +294,14 @@ class MainViewModel(
         publish()
     }
 
+    private fun reloadSounds() {
+        val snapshot = collection.snapshot(playable)
+        managedSounds = snapshot.sounds
+        rarities = snapshot.rarities
+        sounds = snapshot.sounds.map { it.clip }
+        publish()
+    }
+
     private fun publish() {
         _uiState.value = MainUiState(
             settings = settings,
@@ -241,6 +311,8 @@ class MainViewModel(
             lastPlayedSound = lastPlayedSound,
             nextResponseIntervalMs = null,
             sounds = sounds,
+            managedSounds = managedSounds,
+            rarities = rarities,
         )
     }
 

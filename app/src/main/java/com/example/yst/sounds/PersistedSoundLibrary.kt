@@ -28,6 +28,21 @@ class PersistedSoundLibrary(
         return updated
     }
 
+    fun isReadable(clip: SoundClip): Boolean {
+        if (BundledRawSounds.isBundled(clip.id)) {
+            return true
+        }
+        val uri = runCatching { Uri.parse(clip.id) }.getOrNull() ?: return false
+        if (uri.scheme.isNullOrBlank()) {
+            return false
+        }
+        return try {
+            appContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun importUris(uris: List<Uri>): List<SoundClip> {
         val imported = mutableListOf<SoundClip>()
         for (uri in uris) {
