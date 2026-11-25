@@ -27,9 +27,11 @@ class SpeechDetectorTest {
         val detector = SpeechDetector(settings)
         detector.onFrame(frame(timestampMs = 0L, levelDbFs = -20f, isSpeech = true))
 
-        val dropped = detector.onFrame(frame(timestampMs = 600L, levelDbFs = -40f, isSpeech = true))
+        val dipped = detector.onFrame(frame(timestampMs = 600L, levelDbFs = -40f, isSpeech = true))
+        val dropped = detector.onFrame(frame(timestampMs = 901L, levelDbFs = -40f, isSpeech = true))
         val restarted = detector.onFrame(frame(timestampMs = 1_700L, levelDbFs = -20f, isSpeech = true))
 
+        assertEquals(DetectionPhase.Arming, dipped.phase)
         assertEquals(DetectionPhase.Idle, dropped.phase)
         assertEquals(DetectionPhase.Arming, restarted.phase)
         assertFalse(restarted.cycleStarted)
@@ -39,8 +41,9 @@ class SpeechDetectorTest {
     fun speechLostBeforeDurationResetsArming() {
         val detector = SpeechDetector(settings)
         detector.onFrame(frame(timestampMs = 0L, levelDbFs = -20f, isSpeech = true))
+        detector.onFrame(frame(timestampMs = 400L, levelDbFs = -10f, isSpeech = false))
 
-        val step = detector.onFrame(frame(timestampMs = 400L, levelDbFs = -10f, isSpeech = false))
+        val step = detector.onFrame(frame(timestampMs = 701L, levelDbFs = -10f, isSpeech = false))
 
         assertEquals(DetectionPhase.Idle, step.phase)
         assertFalse(step.cycleStarted)
@@ -56,6 +59,34 @@ class SpeechDetectorTest {
         assertEquals(DetectionPhase.Active, step.phase)
         assertTrue(step.cycleStarted)
         assertFalse(step.cycleEnded)
+    }
+
+    @Test
+    fun briefDipWhileArmingDoesNotReturnToIdle() {
+        val detector = SpeechDetector(settings)
+        detector.onFrame(frame(timestampMs = 0L, levelDbFs = -20f, isSpeech = true))
+        val dipped = detector.onFrame(frame(timestampMs = 900L, levelDbFs = -40f, isSpeech = true))
+
+        detector.onFrame(frame(timestampMs = 1_100L, levelDbFs = -20f, isSpeech = true))
+        val step = detector.onFrame(frame(timestampMs = 1_200L, levelDbFs = -20f, isSpeech = true))
+
+        assertEquals(DetectionPhase.Arming, dipped.phase)
+        assertTrue(step.cycleStarted)
+    }
+
+    @Test
+    fun nextCycleStartsQuicklyAfterThePreviousOneEnds() {
+        val detector = startedDetector()
+        detector.onFrame(frame(timestampMs = 2_000L, levelDbFs = -60f, isSpeech = false))
+        val ended = detector.onFrame(frame(timestampMs = 3_500L, levelDbFs = -60f, isSpeech = false))
+        detector.onFrame(frame(timestampMs = 4_000L, levelDbFs = -10f, isSpeech = true))
+
+        val step = detector.onFrame(frame(timestampMs = 4_200L, levelDbFs = -10f, isSpeech = true))
+
+        assertTrue(ended.cycleEnded)
+        assertEquals(DetectionPhase.Idle, ended.phase)
+        assertTrue(step.cycleStarted)
+        assertEquals(DetectionPhase.Active, step.phase)
     }
 
     @Test
