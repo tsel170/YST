@@ -59,14 +59,24 @@ class SpeechDetectorTest {
     }
 
     @Test
-    fun volumeDipDuringActiveCycleDoesNotEndIt() {
+    fun shortDropBelowThresholdDoesNotEndActiveCycle() {
         val detector = startedDetector()
 
-        val step = detector.onFrame(frame(timestampMs = 5_000L, levelDbFs = -80f, isSpeech = true))
+        val step = detector.onFrame(frame(timestampMs = 2_000L, levelDbFs = -80f, isSpeech = true))
 
         assertEquals(DetectionPhase.Active, step.phase)
         assertFalse(step.cycleEnded)
-        assertFalse(step.cycleStarted)
+    }
+
+    @Test
+    fun sustainedLevelBelowThresholdEndsActiveCycle() {
+        val detector = startedDetector()
+        detector.onFrame(frame(timestampMs = 2_000L, levelDbFs = -80f, isSpeech = true))
+
+        val step = detector.onFrame(frame(timestampMs = 3_500L, levelDbFs = -80f, isSpeech = true))
+
+        assertEquals(DetectionPhase.Idle, step.phase)
+        assertTrue(step.cycleEnded)
     }
 
     @Test
@@ -92,17 +102,28 @@ class SpeechDetectorTest {
     }
 
     @Test
-    fun quietSpeechResetsSilenceTimer() {
+    fun speechBelowThresholdDoesNotResetSilenceTimer() {
         val detector = startedDetector()
         detector.onFrame(frame(timestampMs = 2_000L, levelDbFs = -55f, isSpeech = false))
-        detector.onFrame(frame(timestampMs = 3_400L, levelDbFs = -55f, isSpeech = true))
-        detector.onFrame(frame(timestampMs = 3_400L, levelDbFs = -55f, isSpeech = false))
 
-        val stillActive = detector.onFrame(frame(timestampMs = 4_899L, levelDbFs = -55f, isSpeech = false))
-        val ended = detector.onFrame(frame(timestampMs = 4_900L, levelDbFs = -55f, isSpeech = false))
+        val stillActive = detector.onFrame(frame(timestampMs = 3_499L, levelDbFs = -55f, isSpeech = true))
+        val ended = detector.onFrame(frame(timestampMs = 3_500L, levelDbFs = -55f, isSpeech = true))
 
         assertEquals(DetectionPhase.Active, stillActive.phase)
         assertTrue(ended.cycleEnded)
+    }
+
+    @Test
+    fun loudSpeechReturnsBeforeSilenceTimeoutKeepsCycle() {
+        val detector = startedDetector()
+        detector.onFrame(frame(timestampMs = 2_000L, levelDbFs = -55f, isSpeech = true))
+        detector.onFrame(frame(timestampMs = 3_000L, levelDbFs = -20f, isSpeech = true))
+        detector.onFrame(frame(timestampMs = 3_100L, levelDbFs = -55f, isSpeech = true))
+
+        val step = detector.onFrame(frame(timestampMs = 4_599L, levelDbFs = -55f, isSpeech = true))
+
+        assertEquals(DetectionPhase.Active, step.phase)
+        assertFalse(step.cycleEnded)
     }
 
     @Test

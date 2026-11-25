@@ -7,9 +7,9 @@ package com.example.yst.detection
  * for [DetectionSettings.requiredLoudSpeechMs]. Until that moment, any frame that is not
  * both speech and loud returns the detector to idle.
  *
- * After the cycle starts, volume is no longer part of the decision. The cycle stays active
- * through pauses and quiet speech, and ends only when speech has been absent for
- * [DetectionSettings.silenceTimeoutMs].
+ * After the cycle starts, a frame keeps it alive only while speech stays at or above the
+ * volume threshold. Audio below the threshold counts as silence. The cycle ends once that
+ * silence has lasted [DetectionSettings.silenceTimeoutMs].
  *
  * Frames must arrive with non-decreasing timestamps. The detector itself is single-threaded.
  * A future speaker filter can sit in front of this class and pass only the frames that
@@ -35,7 +35,7 @@ class SpeechDetector(
         return when (phase) {
             DetectionPhase.Idle -> onIdle(frame, loudSpeech)
             DetectionPhase.Arming -> onArming(frame, loudSpeech)
-            DetectionPhase.Active -> onActive(frame)
+            DetectionPhase.Active -> onActive(frame, loudSpeech)
         }
     }
 
@@ -66,8 +66,8 @@ class SpeechDetector(
         return step()
     }
 
-    private fun onActive(frame: SpeechFrame): DetectorStep {
-        if (frame.isSpeech) {
+    private fun onActive(frame: SpeechFrame, loudSpeech: Boolean): DetectorStep {
+        if (loudSpeech) {
             silenceStartMs = null
             return step()
         }
