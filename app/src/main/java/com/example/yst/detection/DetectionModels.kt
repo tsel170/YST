@@ -48,6 +48,8 @@ interface ResponsePlayer {
     fun play(clip: SoundClip)
 
     fun setOnCompletionListener(listener: () -> Unit)
+
+    fun stop() {}
 }
 
 fun interface Cancellable {

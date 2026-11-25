@@ -301,6 +301,8 @@ class MainViewModel(
 
     private fun releaseSession() {
         generation += 1
+        session?.controller?.stop()
+        playback.stop()
         session?.runner?.cancelAll()
         session = null
         levelDbFs = null
@@ -477,6 +479,10 @@ class MainViewModel(
             lastPlayedSound = clip.displayName
             player.play(clip)
             publish()
+        }
+
+        override fun stop() {
+            player.stop()
         }
     }
 

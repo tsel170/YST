@@ -7,8 +7,9 @@ import kotlin.random.Random
  *
  * The first response plays as soon as [SpeechDetector] starts a cycle. Later responses are
  * posted on [runner] and are not rescheduled when speech merely falls below the volume
- * threshold. Playback never overlaps: a response that comes due while audio is still
- * playing waits until that playback ends, then starts, and only then schedules the next gap.
+ * threshold. The gap starts when the previous sound finishes, so a short interval cannot
+ * chain files with no pause. A follow-up plays only if the user is still speaking after
+ * that sound. Audio captured while our own sound is playing is ignored.
  */
 class DetectionController(
     private val detector: SpeechDetector = SpeechDetector(),
@@ -26,6 +27,7 @@ class DetectionController(
     private var cycleActive = false
     private var pending: Cancellable? = null
     private var playWhenIdle = false
+    private var userContinued = false
     private var lastClipId: String? = null
 
     init {
@@ -33,11 +35,19 @@ class DetectionController(
     }
 
     fun onFrame(frame: SpeechFrame): DetectorStep {
-        detector.updateSettings(settings())
+        if (player.isPlaying) {
+            return DetectorStep(phase = detector.currentPhase)
+        }
+        val current = settings().sanitized()
+        detector.updateSettings(current)
+        if (frame.isSpeech && frame.levelDbFs >= current.volumeThresholdDbFs) {
+            userContinued = true
+        }
         val step = detector.onFrame(frame)
         when {
             step.cycleStarted -> {
                 cycleActive = true
+                userContinued = true
                 triggerResponse()
             }
             step.cycleEnded -> {
@@ -47,9 +57,14 @@ class DetectionController(
         return step
     }
 
+    fun stop() {
+        stopScheduling()
+    }
+
     private fun stopScheduling() {
         cycleActive = false
         playWhenIdle = false
+        userContinued = false
         pending?.cancel()
         pending = null
     }
@@ -60,17 +75,24 @@ class DetectionController(
         }
         pending?.cancel()
         pending = null
+        if (!userContinued) {
+            scheduleNext()
+            return
+        }
         if (player.isPlaying) {
             playWhenIdle = true
             return
         }
+        userContinued = false
         playWhenIdle = false
         val clip = chooseClip?.invoke(lastClipId, random) ?: selector.pick(clips(), lastClipId, random)
         if (clip != null) {
             lastClipId = clip.id
             player.play(clip)
         }
-        scheduleNext()
+        if (!player.isPlaying) {
+            scheduleNext()
+        }
     }
 
     private fun scheduleNext() {
@@ -92,9 +114,14 @@ class DetectionController(
     }
 
     private fun onPlaybackFinished() {
-        if (!playWhenIdle || !cycleActive) {
+        if (!cycleActive) {
             return
         }
-        triggerResponse()
+        if (playWhenIdle) {
+            playWhenIdle = false
+            triggerResponse()
+            return
+        }
+        scheduleNext()
     }
 }

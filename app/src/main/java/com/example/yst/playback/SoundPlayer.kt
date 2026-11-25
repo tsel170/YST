@@ -57,6 +57,10 @@ class SoundPlayer(
         }
     }
 
+    override fun stop() {
+        release()
+    }
+
     fun release() {
         mediaPlayer?.let { finish(it) }
     }
