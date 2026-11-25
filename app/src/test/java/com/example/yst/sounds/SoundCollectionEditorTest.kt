@@ -51,6 +51,21 @@ class SoundCollectionEditorTest {
     }
 
     @Test
+    fun bundledSoundStartsOnTheShippedRarityUntilTheUserChangesIt() {
+        val bell = SoundClip("android.resource://com.example.yst/raw/bell", "bell")
+        val editor = SoundCollectionEditor(
+            bundled = { listOf(bell) },
+            imported = MemorySoundLibrary(),
+            bundledRarities = mapOf("bell" to RarityIds.LEGENDARY),
+        )
+
+        assertEquals(RarityIds.LEGENDARY, editor.snapshot().sounds.single().rarityId)
+
+        assertTrue(editor.assign(bell.id, RarityIds.RARE))
+        assertEquals(RarityIds.RARE, editor.snapshot().sounds.single().rarityId)
+    }
+
+    @Test
     fun rarityAssignmentSurvivesReloadAndRenameKeepsTheId() {
         val config = MemoryCollectionConfig()
         val library = MemorySoundLibrary(listOf(imported))

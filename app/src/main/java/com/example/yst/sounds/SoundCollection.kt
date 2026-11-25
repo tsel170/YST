@@ -69,6 +69,7 @@ class SoundCollectionEditor(
     private val imported: SoundLibrary,
     private val config: CollectionConfig = MemoryCollectionConfig(),
     private val newRarityId: () -> String = { "custom-${UUID.randomUUID()}" },
+    private val bundledRarities: Map<String, String> = BundledRarityDefaults.byResourceName,
 ) {
     fun snapshot(playable: (SoundClip) -> Boolean = { true }): CollectionSnapshot {
         val tiers = storedTiers()
@@ -76,10 +77,10 @@ class SoundCollectionEditor(
         val assignments = config.assignments()
         val hidden = config.hiddenBundledIds()
         val bundledSounds = bundled().filter { it.id !in hidden }.map { clip ->
-            managed(clip, bundled = true, rarityId = resolvedRarity(assignments, knownIds, clip.id), playable = playable(clip))
+            managed(clip, bundled = true, rarityId = resolvedRarity(assignments, knownIds, clip.id, bundled = true), playable = playable(clip))
         }
         val importedSounds = imported.load().map { clip ->
-            managed(clip, bundled = false, rarityId = resolvedRarity(assignments, knownIds, clip.id), playable = playable(clip))
+            managed(clip, bundled = false, rarityId = resolvedRarity(assignments, knownIds, clip.id, bundled = false), playable = playable(clip))
         }
         return CollectionSnapshot(sounds = bundledSounds + importedSounds, rarities = tiers)
     }
@@ -154,9 +155,23 @@ class SoundCollectionEditor(
         return if (stored.isValidRarityConfiguration()) stored else defaultRarities()
     }
 
-    private fun resolvedRarity(assignments: Map<String, String>, knownIds: Set<String>, soundId: String): String {
+    private fun resolvedRarity(
+        assignments: Map<String, String>,
+        knownIds: Set<String>,
+        soundId: String,
+        bundled: Boolean,
+    ): String {
         val assigned = assignments[soundId]
-        return if (assigned != null && assigned in knownIds) assigned else RarityIds.COMMON
+        if (assigned != null && assigned in knownIds) {
+            return assigned
+        }
+        if (bundled) {
+            val preset = BundledRawSounds.resourceName(soundId)?.let { bundledRarities[it] }
+            if (preset != null && preset in knownIds) {
+                return preset
+            }
+        }
+        return RarityIds.COMMON
     }
 
     private fun managed(
