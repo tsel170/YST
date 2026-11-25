@@ -31,24 +31,35 @@ class MonitoringService : Service() {
         } else {
             0
         }
-        try {
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), type)
-        } catch (_: SecurityException) {
-            MonitoringRegistry.get(application).onAppBackgrounded()
-            stopSelf()
-            return START_NOT_STICKY
-        } catch (_: IllegalStateException) {
-            MonitoringRegistry.get(application).onAppBackgrounded()
+        val model = MonitoringRegistry.get(application)
+        if (!model.wantsMonitoring()) {
             stopSelf()
             return START_NOT_STICKY
         }
-        MonitoringRegistry.get(application).startMonitoring()
+        try {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), type)
+        } catch (_: SecurityException) {
+            model.onForegroundStartDenied()
+            stopSelf()
+            return START_NOT_STICKY
+        } catch (_: IllegalStateException) {
+            model.onForegroundStartDenied()
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        notificationText = { text ->
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text))
+        }
+        model.resumeMonitoring()
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
-        if (sessionId == sessions.get() && MonitoringRegistry.isRunning()) {
-            MonitoringRegistry.get(application).stopMonitoring()
+        if (sessionId == sessions.get()) {
+            notificationText = null
+            if (MonitoringRegistry.isRunning()) {
+                MonitoringRegistry.get(application).onServiceLost()
+            }
         }
         super.onDestroy()
     }
@@ -63,10 +74,11 @@ class MonitoringService : Service() {
         manager.createNotificationChannel(channel)
     }
 
-    private fun notification() = NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun notification(text: String = getString(R.string.monitoring_notification)) =
+        NotificationCompat.Builder(this, CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_stat_listening)
         .setContentTitle(getString(R.string.app_name))
-        .setContentText(getString(R.string.monitoring_notification))
+        .setContentText(text)
         .setContentIntent(openApp())
         .setOngoing(true)
         .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
@@ -87,6 +99,13 @@ class MonitoringService : Service() {
         private const val NOTIFICATION_ID = 41
         private const val EXTRA_SESSION = "session"
         private val sessions = AtomicInteger()
+
+        @Volatile
+        private var notificationText: ((String) -> Unit)? = null
+
+        fun updateNotification(text: String) {
+            notificationText?.invoke(text)
+        }
 
         fun start(context: Context) {
             val intent = Intent(context, MonitoringService::class.java)

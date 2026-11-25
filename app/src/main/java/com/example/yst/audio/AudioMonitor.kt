@@ -31,8 +31,33 @@ class AudioMonitor(
     private val activeSessionId = AtomicInteger(0)
     private var session: CaptureSession? = null
 
+    override fun isCapturing(): Boolean = activeSessionId.get() != 0
+
+    override fun onRecordingConfigurationChanged() {
+        val captureSession = session ?: return
+        val listener = captureSession.listener
+        if (!isCurrent(captureSession)) {
+            return
+        }
+        if (isClientSilenced(captureSession.recorder)) {
+            listener.onClientSilenced()
+        } else if (captureSession.recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+            listener.onClientAudible()
+        } else {
+            reportFailure(captureSession, listener, AudioCaptureFailure.Interrupted)
+        }
+    }
+
     override fun start(listener: AudioCaptureListener) {
         if (activeSessionId.get() != 0) {
+            val running = session
+            if (running != null && isCurrent(running)) {
+                if (isClientSilenced(running.recorder)) {
+                    listener.onClientSilenced()
+                } else {
+                    listener.onStarted()
+                }
+            }
             return
         }
         if (!hasMicrophonePermission()) {
@@ -51,7 +76,7 @@ class AudioMonitor(
             return
         }
         val sessionId = nextSessionId.incrementAndGet()
-        val captureSession = CaptureSession(sessionId, audioRecord, classifier)
+        val captureSession = CaptureSession(sessionId, audioRecord, classifier, listener)
         session = captureSession
         activeSessionId.set(sessionId)
         val thread = Thread(
@@ -87,18 +112,31 @@ class AudioMonitor(
     private fun captureLoop(captureSession: CaptureSession, listener: AudioCaptureListener) {
         val frame = ShortArray(AudioLevels.FRAME_SAMPLES)
         var framesSinceSilenceCheck = 0
+        var clientSilenced = false
         try {
             while (isCurrent(captureSession)) {
                 framesSinceSilenceCheck += 1
-                if (
-                    framesSinceSilenceCheck >= SILENCE_CHECK_FRAMES &&
-                    isClientSilenced(captureSession.recorder)
-                ) {
-                    reportFailure(captureSession, listener, AudioCaptureFailure.Interrupted)
-                    break
-                }
                 if (framesSinceSilenceCheck >= SILENCE_CHECK_FRAMES) {
                     framesSinceSilenceCheck = 0
+                    val nowSilenced = isClientSilenced(captureSession.recorder)
+                    if (nowSilenced != clientSilenced && isCurrent(captureSession)) {
+                        clientSilenced = nowSilenced
+                        if (clientSilenced) {
+                            listener.onClientSilenced()
+                        } else {
+                            listener.onClientAudible()
+                        }
+                    } else {
+                        clientSilenced = nowSilenced
+                    }
+                    if (
+                        !clientSilenced &&
+                        captureSession.recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING &&
+                        isCurrent(captureSession)
+                    ) {
+                        reportFailure(captureSession, listener, AudioCaptureFailure.Interrupted)
+                        break
+                    }
                 }
                 var offset = 0
                 var readFailed = false
@@ -118,7 +156,7 @@ class AudioMonitor(
                 if (readFailed || !isCurrent(captureSession)) {
                     break
                 }
-                if (offset < frame.size) {
+                if (offset < frame.size || clientSilenced) {
                     continue
                 }
                 val level = AudioLevels.dbfs(frame)
@@ -262,6 +300,7 @@ class AudioMonitor(
         val id: Int,
         val recorder: AudioRecord,
         val classifier: WebRtcSpeechClassifier,
+        val listener: AudioCaptureListener,
     ) {
         val stopRequested = AtomicBoolean(false)
         var worker: Thread? = null

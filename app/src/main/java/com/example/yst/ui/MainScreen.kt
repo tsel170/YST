@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -34,6 +35,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,6 +50,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -70,26 +75,29 @@ fun MainScreen(viewModel: MainViewModel) {
     ) { granted ->
         val microphoneGranted = granted[Manifest.permission.RECORD_AUDIO] == true ||
             hasPermission(context, Manifest.permission.RECORD_AUDIO)
-        if (microphoneGranted) {
+        if (microphoneGranted && viewModel.wantsMonitoring()) {
             MonitoringService.start(context)
-        } else {
+        } else if (!microphoneGranted) {
             viewModel.onPermissionDenied()
         }
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) {
+                resumeMonitoringIfEnabled(context, viewModel, permissionLauncher)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            resumeMonitoringIfEnabled(context, viewModel, permissionLauncher)
+        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val openAudioFiles = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
         viewModel.importUris(uris)
-    }
-
-    LaunchedEffect(viewModel) {
-        if (hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
-            MonitoringService.start(context)
-        }
-        val missing = missingStartupPermissions(context)
-        if (missing.isNotEmpty()) {
-            permissionLauncher.launch(missing)
-        }
     }
 
     LaunchedEffect(viewModel) {
@@ -113,20 +121,21 @@ fun MainScreen(viewModel: MainViewModel) {
         onSilenceTimeoutChanged = viewModel::onSilenceTimeoutChanged,
         onMinIntervalChanged = viewModel::onMinIntervalChanged,
         onMaxIntervalChanged = viewModel::onMaxIntervalChanged,
+        onRetryIntervalChanged = viewModel::onRetryIntervalChanged,
         onMonitoringClicked = {
-            if (state.monitoringActive) {
+            if (state.monitoringEnabled) {
                 viewModel.stopMonitoring()
                 MonitoringService.stop(context)
-            } else {
+            } else if (hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
+                viewModel.requestMonitoring()
+                MonitoringService.start(context)
                 val missing = missingStartupPermissions(context)
-                if (hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
-                    MonitoringService.start(context)
-                    if (missing.isNotEmpty()) {
-                        permissionLauncher.launch(missing)
-                    }
-                } else {
+                if (missing.isNotEmpty()) {
                     permissionLauncher.launch(missing)
                 }
+            } else {
+                viewModel.requestMonitoring()
+                permissionLauncher.launch(missingStartupPermissions(context))
             }
         },
         onAddFilesClicked = { openAudioFiles.launch(arrayOf("audio/*")) },
@@ -149,6 +158,7 @@ private fun MainScreenContent(
     onSilenceTimeoutChanged: (Float) -> Unit,
     onMinIntervalChanged: (Float) -> Unit,
     onMaxIntervalChanged: (Float) -> Unit,
+    onRetryIntervalChanged: (Float) -> Unit,
     onMonitoringClicked: () -> Unit,
     onAddFilesClicked: () -> Unit,
     onRemoveSound: (String) -> Unit,
@@ -159,7 +169,7 @@ private fun MainScreenContent(
     onDeleteRarity: (String) -> Unit,
     onRestoreRarities: () -> Unit,
 ) {
-    val status = monitoringStatus(state.monitoringActive, state.phase)
+    val status = monitoringStatus(state.presence, state.phase)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -201,10 +211,18 @@ private fun MainScreenContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (state.monitoringEnabled) {
+                            Color(0xFF1F8A4C)
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                        contentColor = Color.White,
+                    ),
                 ) {
                     Text(
                         text = stringResource(
-                            if (state.monitoringActive) {
+                            if (state.monitoringEnabled) {
                                 R.string.stop_monitoring
                             } else {
                                 R.string.start_monitoring
@@ -231,6 +249,7 @@ private fun MainScreenContent(
                     onSilenceTimeoutChanged = onSilenceTimeoutChanged,
                     onMinIntervalChanged = onMinIntervalChanged,
                     onMaxIntervalChanged = onMaxIntervalChanged,
+                    onRetryIntervalChanged = onRetryIntervalChanged,
                 )
             }
         }
@@ -241,13 +260,17 @@ private fun MainScreenContent(
 private fun StatusCard(status: MonitoringStatus, phase: DetectionPhase) {
     val label = when (status) {
         MonitoringStatus.Stopped -> stringResource(R.string.status_stopped)
+        MonitoringStatus.Waiting -> stringResource(R.string.status_waiting)
         MonitoringStatus.Listening -> stringResource(R.string.status_listening)
         MonitoringStatus.LoudSpeechDetected -> stringResource(R.string.status_loud_speech)
+        MonitoringStatus.Error -> stringResource(R.string.status_error)
     }
     val detail = when (status) {
         MonitoringStatus.Stopped -> stringResource(R.string.status_stopped_detail)
+        MonitoringStatus.Waiting -> stringResource(R.string.status_waiting_detail)
         MonitoringStatus.Listening -> stringResource(R.string.status_listening_detail)
         MonitoringStatus.LoudSpeechDetected -> stringResource(R.string.status_loud_detail)
+        MonitoringStatus.Error -> stringResource(R.string.status_error_detail)
     }
     SectionCard {
         SectionTitle(stringResource(R.string.section_status))
@@ -577,6 +600,7 @@ private fun SettingsCard(
     onSilenceTimeoutChanged: (Float) -> Unit,
     onMinIntervalChanged: (Float) -> Unit,
     onMaxIntervalChanged: (Float) -> Unit,
+    onRetryIntervalChanged: (Float) -> Unit,
 ) {
     SectionCard {
         SectionTitle(stringResource(R.string.section_settings))
@@ -619,6 +643,16 @@ private fun SettingsCard(
             value = state.settings.maxResponseIntervalMs / 1_000f,
             valueRange = MainViewModel.MIN_INTERVAL_S..MainViewModel.MAX_INTERVAL_S,
             onValueChange = onMaxIntervalChanged,
+        )
+        SettingSlider(
+            title = stringResource(R.string.retry_interval),
+            valueLabel = stringResource(
+                R.string.duration_seconds,
+                (state.retryIntervalMs / 1_000L).toInt(),
+            ),
+            value = state.retryIntervalMs / 1_000f,
+            valueRange = MainViewModel.MIN_RETRY_S..MainViewModel.MAX_RETRY_S,
+            onValueChange = onRetryIntervalChanged,
         )
     }
 }
@@ -678,9 +712,27 @@ private fun SectionTitle(text: String) {
 private fun statusColor(status: MonitoringStatus): Color {
     return when (status) {
         MonitoringStatus.Stopped -> MaterialTheme.colorScheme.onSurfaceVariant
+        MonitoringStatus.Waiting -> Color(0xFFFFC857)
         MonitoringStatus.Listening -> MaterialTheme.colorScheme.secondary
         MonitoringStatus.LoudSpeechDetected -> MaterialTheme.colorScheme.primary
+        MonitoringStatus.Error -> MaterialTheme.colorScheme.error
     }
+}
+
+private fun resumeMonitoringIfEnabled(
+    context: android.content.Context,
+    viewModel: MainViewModel,
+    permissionLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>,
+) {
+    if (!viewModel.wantsMonitoring()) {
+        return
+    }
+    if (!hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
+        viewModel.onPermissionDenied()
+        permissionLauncher.launch(missingStartupPermissions(context))
+        return
+    }
+    MonitoringService.start(context)
 }
 
 private fun hasPermission(context: android.content.Context, permission: String): Boolean {
@@ -716,6 +768,7 @@ private fun MainScreenPreview() {
                 onSilenceTimeoutChanged = {},
                 onMinIntervalChanged = {},
                 onMaxIntervalChanged = {},
+                onRetryIntervalChanged = {},
                 onMonitoringClicked = {},
                 onAddFilesClicked = {},
                 onRemoveSound = {},

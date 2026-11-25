@@ -4,9 +4,13 @@
     <string name="status_stopped">Stopped</string>
     <string name="status_listening">Listening</string>
     <string name="status_loud_speech">Loud Speech Detected</string>
-    <string name="status_stopped_detail">Monitoring is stopped. The detector is idle because no microphone frames are arriving.</string>
+    <string name="status_waiting">Waiting</string>
+    <string name="status_error">Error</string>
+    <string name="status_stopped_detail">Monitoring is stopped. Press Start to listen again. It will not restart on its own.</string>
     <string name="status_listening_detail">Microphone monitoring is running. Loud speech has not yet completed a detection cycle.</string>
     <string name="status_loud_detail">A detection cycle is active.</string>
+    <string name="status_waiting_detail">Monitoring stays on, but the microphone is temporarily unavailable. YST resumes when capture is available again, and also retries on the interval below.</string>
+    <string name="status_error_detail">Monitoring stays on, but capture cannot run until microphone permission is allowed.</string>
     <string name="detector_phase">Detector phase: %1$s</string>
     <string name="section_microphone">Microphone</string>
     <string name="level_unavailable">—</string>
@@ -19,12 +23,14 @@
     <string name="threshold_value">%1$.0f dBFS</string>
     <string name="start_monitoring">Start Monitoring</string>
     <string name="stop_monitoring">Stop Monitoring</string>
-    <string name="permission_denied">Microphone permission was denied. Monitoring stays stopped.</string>
-    <string name="capture_failed">Microphone capture could not start.</string>
-    <string name="capture_interrupted">Microphone capture stopped because the input was interrupted.</string>
-    <string name="capture_background_stopped">Monitoring stopped. Android did not allow the listening notification to stay active.</string>
+    <string name="permission_denied">Microphone permission is off. Monitoring stays enabled, but capture cannot run until you allow it.</string>
+    <string name="capture_failed">The microphone could not be opened. YST will try again.</string>
+    <string name="capture_interrupted">Microphone capture stopped. YST will resume when the microphone is available.</string>
+    <string name="capture_background_stopped">Android did not allow the listening notification. Press Stop, then Start while YST is open.</string>
     <string name="monitoring_channel">Listening</string>
     <string name="monitoring_notification">YST is listening for speech</string>
+    <string name="monitoring_notification_waiting">YST is waiting for the microphone</string>
+    <string name="monitoring_notification_error">YST needs microphone permission</string>
     <string name="section_response">Response</string>
     <string name="last_played_label">Last played sound</string>
     <string name="last_played_none">None</string>
@@ -59,4 +65,5 @@
     <string name="response_interval_max">Maximum response interval</string>
     <string name="duration_ms">%1$d ms</string>
     <string name="duration_seconds">%1$d s</string>
+    <string name="retry_interval">Microphone retry interval</string>
 </resources>

@@ -14,10 +14,18 @@ interface AudioCaptureListener {
     fun onFrame(frame: SpeechFrame)
 
     fun onFailure(failure: AudioCaptureFailure)
+
+    fun onClientSilenced() {}
+
+    fun onClientAudible() {}
 }
 
 interface AudioCapture {
     fun start(listener: AudioCaptureListener)
 
     fun stop()
+
+    fun isCapturing(): Boolean = false
+
+    fun onRecordingConfigurationChanged() {}
 }
