@@ -11,8 +11,8 @@ data class RarityTier(
 fun defaultRarities(): List<RarityTier> {
     return listOf(
         RarityTier(id = RarityIds.LEGENDARY, name = "Legendary", probabilityPercent = 1, order = 0, custom = false),
-        RarityTier(id = RarityIds.RARE, name = "Rare", probabilityPercent = 4, order = 1, custom = false),
-        RarityTier(id = RarityIds.COMMON, name = "Common", probabilityPercent = 95, order = 2, custom = false),
+        RarityTier(id = RarityIds.RARE, name = "Rare", probabilityPercent = 25, order = 1, custom = false),
+        RarityTier(id = RarityIds.COMMON, name = "Common", probabilityPercent = 74, order = 2, custom = false),
     )
 }
 
