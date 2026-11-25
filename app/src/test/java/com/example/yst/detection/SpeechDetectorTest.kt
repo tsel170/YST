@@ -8,7 +8,7 @@ import org.junit.Test
 class SpeechDetectorTest {
     private val settings = DetectionSettings(
         volumeThresholdDbFs = -30f,
-        requiredLoudSpeechMs = 1_200L,
+        requiredLoudSpeechMs = 3_000L,
         silenceTimeoutMs = 1_500L,
     )
 

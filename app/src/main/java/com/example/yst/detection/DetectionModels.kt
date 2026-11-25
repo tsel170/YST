@@ -4,8 +4,8 @@ data class DetectionSettings(
     val volumeThresholdDbFs: Float = -10f,
     val requiredLoudSpeechMs: Long = 1_200L,
     val silenceTimeoutMs: Long = 1_500L,
-    val minResponseIntervalMs: Long = 10_000L,
-    val maxResponseIntervalMs: Long = 20_000L,
+    val minResponseIntervalMs: Long = 20_000L,
+    val maxResponseIntervalMs: Long = 60_000L,
 ) {
     fun sanitized(): DetectionSettings {
         val minimumInterval = minResponseIntervalMs.coerceAtLeast(0L)

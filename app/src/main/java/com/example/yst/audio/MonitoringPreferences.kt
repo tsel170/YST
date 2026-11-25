@@ -36,4 +36,4 @@ class SharedMonitoringPreferences(
     }
 }
 
-const val DEFAULT_RETRY_MS = 3_000L
+const val DEFAULT_RETRY_MS = 20_000L
