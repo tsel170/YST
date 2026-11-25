@@ -6,7 +6,7 @@ import com.example.yst.ui.MonitoringPresence
 /**
  * Keeps one capture attempt and one retry in flight.
  * Manual disable cancels recovery. Permission loss does not retry.
- * A silenced recorder stays the current capture and is not replaced.
+ * While another client is using the microphone, capture stays released.
  */
 class MicrophoneWatch(
     private val schedule: (delayMs: Long, action: () -> Unit) -> Cancellable,
@@ -14,6 +14,7 @@ class MicrophoneWatch(
     private val stopCapture: () -> Unit,
     private val retryIntervalMs: () -> Long,
     private val isCapturing: () -> Boolean = { false },
+    private val microphoneFree: () -> Boolean = { true },
 ) {
     var enabled: Boolean = false
         private set
@@ -63,19 +64,26 @@ class MicrophoneWatch(
     }
 
     fun onSilenced() {
-        if (!enabled) {
+        onMicrophoneTaken()
+    }
+
+    fun onMicrophoneTaken() {
+        if (!enabled || presence == MonitoringPresence.Error) {
             return
         }
         starting = false
-        captureActive = true
+        captureActive = false
         presence = MonitoringPresence.Waiting
+        stopCapture()
+        scheduleRetry()
     }
 
     fun onSilenceCleared() {
-        if (!enabled || !captureActive) {
+        if (!microphoneFree()) {
+            onMicrophoneTaken()
             return
         }
-        presence = MonitoringPresence.Monitoring
+        onMicrophoneAvailable()
     }
 
     fun onTemporarilyUnavailable() {
@@ -102,6 +110,10 @@ class MicrophoneWatch(
     }
 
     fun onMicrophoneAvailable() {
+        if (!microphoneFree()) {
+            onMicrophoneTaken()
+            return
+        }
         if (!recover || !enabled || presence == MonitoringPresence.Error || captureActive || starting) {
             return
         }
@@ -120,6 +132,11 @@ class MicrophoneWatch(
 
     private fun attemptStart() {
         if (!enabled || captureActive || starting || presence == MonitoringPresence.Error) {
+            return
+        }
+        if (!microphoneFree()) {
+            presence = MonitoringPresence.Waiting
+            scheduleRetry()
             return
         }
         cancelRetry()

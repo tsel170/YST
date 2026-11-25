@@ -98,6 +98,7 @@ class MainViewModel(
         stopCapture = { audioCapture.stop() },
         retryIntervalMs = { monitoringPreferences.retryIntervalMs.coerceIn(MIN_RETRY_MS, MAX_RETRY_MS) },
         isCapturing = { audioCapture.isCapturing() },
+        microphoneFree = { audioCapture.isMicrophoneFree() },
     )
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -258,12 +259,15 @@ class MainViewModel(
     fun wantsMonitoring(): Boolean = watch.enabled
 
     fun onRecordingConfigurationChanged() {
-        audioCapture.onRecordingConfigurationChanged()
         deliver {
             if (!watch.enabled || !signalsAttached) {
                 return@deliver
             }
-            watch.onMicrophoneAvailable()
+            if (audioCapture.isMicrophoneFree()) {
+                watch.onMicrophoneAvailable()
+            } else {
+                pauseListeningForMicrophoneUse()
+            }
             publish()
         }
     }
@@ -402,12 +406,10 @@ class MainViewModel(
 
         override fun onClientSilenced() {
             deliver {
-                if (!sameSession(listening)) {
+                if (!sameSession(listening) || !watch.enabled) {
                     return@deliver
                 }
-                levelDbFs = null
-                watch.onSilenced()
-                publish()
+                pauseListeningForMicrophoneUse()
             }
         }
 
@@ -420,6 +422,17 @@ class MainViewModel(
                 publish()
             }
         }
+    }
+
+    private fun pauseListeningForMicrophoneUse() {
+        session?.controller?.stop()
+        playback.stop()
+        session?.runner?.cancelAll()
+        session = null
+        levelDbFs = null
+        phase = DetectionPhase.Idle
+        watch.onMicrophoneTaken()
+        publish()
     }
 
     private fun sameSession(listening: ListeningSession): Boolean {

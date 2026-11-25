@@ -27,5 +27,7 @@ interface AudioCapture {
 
     fun isCapturing(): Boolean = false
 
+    fun isMicrophoneFree(): Boolean = true
+
     fun onRecordingConfigurationChanged() {}
 }

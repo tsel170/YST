@@ -33,13 +33,15 @@ class AudioMonitor(
 
     override fun isCapturing(): Boolean = activeSessionId.get() != 0
 
+    override fun isMicrophoneFree(): Boolean = !microphoneTaken(session?.recorder?.audioSessionId)
+
     override fun onRecordingConfigurationChanged() {
         val captureSession = session ?: return
         val listener = captureSession.listener
         if (!isCurrent(captureSession)) {
             return
         }
-        if (isClientSilenced(captureSession.recorder)) {
+        if (microphoneTaken(captureSession.recorder.audioSessionId)) {
             listener.onClientSilenced()
         } else if (captureSession.recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
             listener.onClientAudible()
@@ -52,7 +54,7 @@ class AudioMonitor(
         if (activeSessionId.get() != 0) {
             val running = session
             if (running != null && isCurrent(running)) {
-                if (isClientSilenced(running.recorder)) {
+                if (microphoneTaken(running.recorder.audioSessionId)) {
                     listener.onClientSilenced()
                 } else {
                     listener.onStarted()
@@ -112,25 +114,16 @@ class AudioMonitor(
     private fun captureLoop(captureSession: CaptureSession, listener: AudioCaptureListener) {
         val frame = ShortArray(AudioLevels.FRAME_SAMPLES)
         var framesSinceSilenceCheck = 0
-        var clientSilenced = false
         try {
             while (isCurrent(captureSession)) {
                 framesSinceSilenceCheck += 1
                 if (framesSinceSilenceCheck >= SILENCE_CHECK_FRAMES) {
                     framesSinceSilenceCheck = 0
-                    val nowSilenced = isClientSilenced(captureSession.recorder)
-                    if (nowSilenced != clientSilenced && isCurrent(captureSession)) {
-                        clientSilenced = nowSilenced
-                        if (clientSilenced) {
-                            listener.onClientSilenced()
-                        } else {
-                            listener.onClientAudible()
-                        }
-                    } else {
-                        clientSilenced = nowSilenced
+                    if (microphoneTaken(captureSession.recorder.audioSessionId) && isCurrent(captureSession)) {
+                        listener.onClientSilenced()
+                        break
                     }
                     if (
-                        !clientSilenced &&
                         captureSession.recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING &&
                         isCurrent(captureSession)
                     ) {
@@ -156,7 +149,7 @@ class AudioMonitor(
                 if (readFailed || !isCurrent(captureSession)) {
                     break
                 }
-                if (offset < frame.size || clientSilenced) {
+                if (offset < frame.size) {
                     continue
                 }
                 val level = AudioLevels.dbfs(frame)
@@ -277,12 +270,17 @@ class AudioMonitor(
         }
     }
 
-    private fun isClientSilenced(audioRecord: AudioRecord): Boolean {
+    private fun microphoneTaken(ourSessionId: Int?): Boolean {
         val manager = context.getSystemService(AudioManager::class.java) ?: return false
-        val sessionId = audioRecord.audioSessionId
-        return manager.activeRecordingConfigurations.any { configuration ->
-            configuration.clientAudioSessionId == sessionId && configuration.isClientSilenced
+        val inCall = manager.mode == AudioManager.MODE_IN_CALL ||
+            manager.mode == AudioManager.MODE_IN_COMMUNICATION
+        val clients = manager.activeRecordingConfigurations.map { configuration ->
+            RecordingClient(
+                sessionId = configuration.clientAudioSessionId,
+                silenced = configuration.isClientSilenced,
+            )
         }
+        return MicrophoneOccupancy.taken(ourSessionId, clients, inCall)
     }
 
     private fun releaseRecorder(audioRecord: AudioRecord) {

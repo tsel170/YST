@@ -73,18 +73,20 @@ class MicrophoneWatchTest {
     }
 
     @Test
-    fun silencedRecorderIsNotReplaced() {
+    fun microphoneUseReleasesCaptureUntilTheMicrophoneIsFree() {
         val harness = WatchHarness()
         harness.watch.enable()
-        harness.watch.onSilenced()
+        harness.microphoneFree = false
+        harness.watch.onMicrophoneTaken()
         harness.watch.onMicrophoneAvailable()
+        harness.clock.advanceBy(60_000)
 
         assertEquals(1, harness.starts)
-        assertEquals(0, harness.schedules)
         assertEquals(MonitoringPresence.Waiting, harness.watch.presence)
-        harness.watch.onSilenceCleared()
+        harness.microphoneFree = true
+        harness.watch.onMicrophoneAvailable()
+        assertEquals(2, harness.starts)
         assertEquals(MonitoringPresence.Monitoring, harness.watch.presence)
-        assertEquals(1, harness.starts)
     }
 
     @Test
@@ -117,6 +119,7 @@ class MicrophoneWatchTest {
         var starts = 0
         var schedules = 0
         var intervalMs = 3_000L
+        var microphoneFree = true
         private var active = false
         val watch = MicrophoneWatch(
             schedule = { delay, action ->
@@ -131,6 +134,7 @@ class MicrophoneWatchTest {
             stopCapture = { active = false },
             retryIntervalMs = { intervalMs },
             isCapturing = { active },
+            microphoneFree = { microphoneFree },
         )
     }
 }
@@ -221,17 +225,25 @@ class MicrophoneRecoveryTest {
     }
 
     @Test
-    fun silenceDoesNotOpenAnotherRecorder() {
+    fun microphoneUseStopsListeningUntilItIsFree() {
         val fixture = Fixture()
         fixture.viewModel.startMonitoring()
+        fixture.capture.microphoneFree = false
         fixture.capture.silence()
         fixture.signals.emit()
+        fixture.clock.advanceBy(30_000)
 
         assertEquals(1, fixture.capture.starts)
+        assertFalse(fixture.capture.isCapturing())
         assertEquals(MonitoringPresence.Waiting, fixture.viewModel.uiState.value.presence)
-        fixture.capture.audible()
+        assertTrue(fixture.viewModel.uiState.value.monitoringEnabled)
+        assertFalse(fixture.viewModel.uiState.value.monitoringActive)
+
+        fixture.capture.microphoneFree = true
+        fixture.signals.emit()
+
+        assertEquals(2, fixture.capture.starts)
         assertEquals(MonitoringPresence.Monitoring, fixture.viewModel.uiState.value.presence)
-        assertEquals(1, fixture.capture.starts)
     }
 
     @Test
@@ -294,6 +306,7 @@ class MicrophoneRecoveryTest {
     private class ControllableCapture : AudioCapture {
         var starts = 0
         var failNext: AudioCaptureFailure? = null
+        var microphoneFree = true
         private var listener: AudioCaptureListener? = null
         private var capturing = false
 
@@ -317,6 +330,8 @@ class MicrophoneRecoveryTest {
         }
 
         override fun isCapturing(): Boolean = capturing
+
+        override fun isMicrophoneFree(): Boolean = microphoneFree
 
         fun fail(failure: AudioCaptureFailure) {
             val current = listener ?: return

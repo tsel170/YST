@@ -9,7 +9,7 @@
     <string name="status_stopped_detail">Monitoring is stopped. Press Start to listen again. It will not restart on its own.</string>
     <string name="status_listening_detail">Microphone monitoring is running. Loud speech has not yet completed a detection cycle.</string>
     <string name="status_loud_detail">A detection cycle is active.</string>
-    <string name="status_waiting_detail">Monitoring stays on, but the microphone is temporarily unavailable. YST resumes when capture is available again, and also retries on the interval below.</string>
+    <string name="status_waiting_detail">Listening is paused because the microphone is in use. YST listens again when the microphone is free.</string>
     <string name="status_error_detail">Monitoring stays on, but capture cannot run until microphone permission is allowed.</string>
     <string name="detector_phase">Detector phase: %1$s</string>
     <string name="section_microphone">Microphone</string>
