@@ -3,6 +3,7 @@ package com.example.yst.sounds
 import android.content.Context
 import com.example.yst.detection.SoundClip
 
+
 object BundledRarityDefaults {
     /**
      * Shipped raw file name, without the extension, to a rarity id.
@@ -12,9 +13,9 @@ object BundledRarityDefaults {
      * A change the user makes later replaces this default on that device.
      */
     val byResourceName: Map<String, String> = mapOf(
-        // "quiet_beep" to RarityIds.COMMON,
-        // "alert" to RarityIds.RARE,
-        // "airhorn" to RarityIds.LEGENDARY,
+        
+         "yst_qa" to RarityIds.RARE,
+         "yst_legend" to RarityIds.LEGENDARY,
     )
 }
 
